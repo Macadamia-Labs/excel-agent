@@ -3,6 +3,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import uuid
+import os
 
 # Import core logic functions
 from app.excel_to_markdown import convert_excel_to_markdown 
@@ -32,36 +33,45 @@ app.add_middleware(
 # --- API Endpoints ---
 
 @app.post("/scan-to-markdown/", 
-          summary="Converts a scanned PDF document to Markdown using OCR and AI enhancement",
+          summary="Converts a scanned document (PDF or image) to Markdown using OCR and AI enhancement",
           response_description="Markdown content of the document")
 async def scan_to_markdown_route(
     background_tasks: BackgroundTasks,
-    pdf_file: UploadFile = File(..., description="Scanned document in PDF format")
+    document: UploadFile = File(..., description="Scanned document in PDF, PNG, or JPG format")
 ):
     """
-    Receives a PDF, processes it using AWS Textract and Google Gemini,
+    Receives a PDF or image file, processes it using AWS Textract and Google Gemini,
     and returns the extracted content as a Markdown string.
     """
     request_id = uuid.uuid4()
     print(f"[{request_id}] Received request for /scan-to-markdown/")
 
+    # Validate file type
+    allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg'}
+    file_ext = os.path.splitext(document.filename)[1].lower()
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Allowed types: {', '.join(allowed_extensions)}"
+        )
+
     try:
-        markdown_content, pdf_path, raw_text_path, table_path = await convert_scan_to_markdown(request_id, pdf_file)
+        markdown_content, doc_path, raw_text_path, table_path = await convert_scan_to_markdown(request_id, document)
         
         # Schedule cleanup for all temporary files
-        print(f"[{request_id}] Scheduling cleanup for: {pdf_path}, {raw_text_path}, {table_path}")
-        background_tasks.add_task(cleanup_files, pdf_path, raw_text_path, table_path)
+        print(f"[{request_id}] Scheduling cleanup for: {doc_path}, {raw_text_path}, {table_path}")
+        background_tasks.add_task(cleanup_files, doc_path, raw_text_path, table_path)
         
         # Return the markdown content
         print(f"[{request_id}] Returning Markdown content.")
         return PlainTextResponse(content=markdown_content, media_type="text/markdown")
 
     except HTTPException as http_exc:
-        cleanup_files(pdf_path, raw_text_path, table_path)
+        cleanup_files(doc_path, raw_text_path, table_path)
         raise http_exc
     except Exception as e:
         print(f"[{request_id}] An unexpected server error occurred: {str(e)}")
-        cleanup_files(pdf_path, raw_text_path, table_path)
+        cleanup_files(doc_path, raw_text_path, table_path)
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}")
     
 
@@ -179,30 +189,39 @@ async def fill_excel_with_json_route(
 
 
 @app.post("/fill-excel-with-scan/",
-          summary="Fills an Excel template using data extracted from a scanned PDF",
+          summary="Fills an Excel template using data extracted from a scanned document",
           response_description="The filled Excel file")
 async def fill_excel_with_scan_route(
     background_tasks: BackgroundTasks,
     excel_template: UploadFile = File(..., description="Excel template file (.xlsx)"),
-    pdf_file: UploadFile = File(..., description="Scanned document in PDF format containing data")
+    document: UploadFile = File(..., description="Scanned document in PDF, PNG, or JPG format containing data")
 ):
     """
-    Receives an Excel template and a scanned PDF. Converts both to Markdown, 
+    Receives an Excel template and a scanned document. Converts both to Markdown, 
     uses Gemini to map data from the scan to the template, fills the template, 
     and returns the resulting Excel file.
     """
     request_id = uuid.uuid4()
     print(f"[{request_id}] Received request for /fill-excel-with-scan/")
 
+    # Validate file type
+    allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg'}
+    file_ext = os.path.splitext(document.filename)[1].lower()
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Allowed types: {', '.join(allowed_extensions)}"
+        )
+
     try:
         # Call the core logic function
-        output_path, excel_path, pdf_path, raw_text_path, table_path = await fill_excel_with_scan(
-            request_id, excel_template, pdf_file
+        output_path, excel_path, doc_path, raw_text_path, table_path = await fill_excel_with_scan(
+            request_id, excel_template, document
         )
 
         # Schedule cleanup for all temporary files
-        print(f"[{request_id}] Scheduling cleanup for: {excel_path}, {pdf_path}, {raw_text_path}, {table_path}, {output_path}")
-        background_tasks.add_task(cleanup_files, excel_path, pdf_path, raw_text_path, table_path, output_path)
+        print(f"[{request_id}] Scheduling cleanup for: {excel_path}, {doc_path}, {raw_text_path}, {table_path}, {output_path}")
+        background_tasks.add_task(cleanup_files, excel_path, doc_path, raw_text_path, table_path, output_path)
 
         # Return the filled Excel file
         output_filename = excel_template.filename.replace(".xlsx", "_filled.xlsx") if excel_template.filename else "filled_template.xlsx"

@@ -6,20 +6,20 @@ from app.fill_excel_with_json import fill_excel_template
 from app.scan_to_markdown import convert_scan_to_markdown
 
 
-async def fill_excel_with_scan(request_id, excel_template, pdf_file):
+async def fill_excel_with_scan(request_id, excel_template, document):
     """
-    Core logic for filling an Excel template with data from a scanned PDF.
+    Core logic for filling an Excel template with data from a scanned document.
     
     Args:
         request_id: Unique identifier for the request
         excel_template: UploadFile containing the Excel template
-        pdf_file: UploadFile containing the scanned PDF
+        document: UploadFile containing the scanned document (PDF or image)
         
     Returns:
-        tuple: (output_path, excel_path, pdf_path, raw_text_path, table_path)
+        tuple: (output_path, excel_path, doc_path, raw_text_path, table_path)
     """
     excel_path = None
-    pdf_path = None
+    doc_path = None
     raw_text_path = None
     table_path = None
     output_path = None
@@ -41,9 +41,9 @@ async def fill_excel_with_scan(request_id, excel_template, pdf_file):
             raise Exception(f"Failed to convert Excel template to markdown: {template_markdown}")
         print(f"[{request_id}] Excel template converted to Markdown successfully.")
 
-        # 2. Process PDF scan to Markdown using scan_to_markdown
+        # 2. Process scanned document to Markdown using scan_to_markdown
         print(f"[{request_id}] Converting scan to Markdown...")
-        scan_markdown, pdf_path, raw_text_path, table_path = await convert_scan_to_markdown(request_id, pdf_file)
+        scan_markdown, doc_path, raw_text_path, table_path = await convert_scan_to_markdown(request_id, document)
         print(f"[{request_id}] Scan converted to Markdown successfully.")
 
         # 3. Generate data mapping using Gemini
@@ -59,10 +59,10 @@ async def fill_excel_with_scan(request_id, excel_template, pdf_file):
         if not success:
             raise Exception(f"Failed to fill Excel template after mapping: {error}")
 
-        return output_path, excel_path, pdf_path, raw_text_path, table_path
+        return output_path, excel_path, doc_path, raw_text_path, table_path
 
     except Exception as e:
         # Clean up any files that were created before the error
         from utils.file_utils import cleanup_files
-        cleanup_files(excel_path, pdf_path, raw_text_path, table_path, output_path)
+        cleanup_files(excel_path, doc_path, raw_text_path, table_path, output_path)
         raise e 

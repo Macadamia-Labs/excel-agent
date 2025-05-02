@@ -35,15 +35,20 @@ def read_prompt_file(filename):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read prompt file {filename}: {str(e)}")
 
-def generate_markdown_from_scan(gemini_model, pdf_path: str, raw_text_path: str, table_path: str) -> str:
+def generate_markdown_from_scan(gemini_model, doc_path: str, raw_text_path: str, table_path: str) -> str:
     """
-    Generates markdown content from a PDF scan using Gemini, aided by Textract output.
-    (Based on ocr.py:process_with_gemini)
+    Generates markdown content from a document scan (PDF or image) using Gemini, aided by Textract output.
     """
     try:
-        images = convert_from_path(pdf_path)
+        # Handle PDF or image file
+        file_ext = os.path.splitext(doc_path)[1].lower()
+        if file_ext == '.pdf':
+            images = convert_from_path(doc_path)
+        else:
+            # For image files, create a single-item list
+            images = [Image.open(doc_path)]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to convert PDF to images for Gemini: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to process document for Gemini: {str(e)}")
 
     try:
         with open(raw_text_path, 'r', encoding='utf-8') as f:

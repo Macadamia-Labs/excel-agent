@@ -4,7 +4,7 @@ import tempfile
 from dotenv import load_dotenv
 from fastapi import HTTPException
 import io
-from PIL import Image, ImageDraw
+from PIL import Image
 from pdf2image import convert_from_path
 
 # Load environment variables
@@ -30,18 +30,12 @@ def get_textract_client():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to initialize AWS Textract client: {str(e)}")
 
-def extract_text_and_tables(client, pdf_path: str) -> tuple[str, str]:
+def extract_text_and_tables(client, doc_path: str) -> tuple[str, str]:
     """
-    Processes a PDF using Textract, saves raw text and table data to temporary files, 
+    Processes a document (PDF or image) using Textract, saves raw text and table data to temporary files, 
     and returns the paths to these files.
-    (Based on ocr.py:process_text_analysis)
     """
-    try:
-        images = convert_from_path(pdf_path)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to convert PDF to images: {str(e)}")
-
-    base_filename = os.path.splitext(os.path.basename(pdf_path))[0]
+    base_filename = os.path.splitext(os.path.basename(doc_path))[0]
     # Use temp files instead of writing to output dir directly in this utility
     raw_text_file_path = tempfile.mktemp(suffix=f"_{base_filename}_rawtext.txt")
     table_file_path = tempfile.mktemp(suffix=f"_{base_filename}_tables.txt")
@@ -49,6 +43,14 @@ def extract_text_and_tables(client, pdf_path: str) -> tuple[str, str]:
     try:
         with open(raw_text_file_path, 'w', encoding='utf-8') as raw_text_file, \
              open(table_file_path, 'w', encoding='utf-8') as table_file:
+
+            # Handle PDF or image file
+            file_ext = os.path.splitext(doc_path)[1].lower()
+            if file_ext == '.pdf':
+                images = convert_from_path(doc_path)
+            else:
+                # For image files, create a single-item list
+                images = [Image.open(doc_path)]
 
             for page_num, image in enumerate(images, start=1):
                 raw_text_file.write(f"\n\n=== Page {page_num} ===\n\n")
@@ -114,4 +116,4 @@ def extract_text_and_tables(client, pdf_path: str) -> tuple[str, str]:
         # Clean up temp files if error occurs during processing
         from .file_utils import cleanup_files # Avoid circular import at top level
         cleanup_files(raw_text_file_path, table_file_path)
-        raise HTTPException(status_code=500, detail=f"Error processing PDF with Textract: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Error processing document with Textract: {str(e)}") 
