@@ -26,6 +26,15 @@ def get_gemini_client():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to initialize Gemini client: {str(e)}")
 
+def read_prompt_file(filename):
+    """Read a prompt file from the prompt directory."""
+    prompt_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompts', filename)
+    try:
+        with open(prompt_path, 'r', encoding='utf-8') as f:
+            return f.read().strip()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read prompt file {filename}: {str(e)}")
+
 def generate_markdown_from_scan(gemini_model, pdf_path: str, raw_text_path: str, table_path: str) -> str:
     """
     Generates markdown content from a PDF scan using Gemini, aided by Textract output.
@@ -44,22 +53,7 @@ def generate_markdown_from_scan(gemini_model, pdf_path: str, raw_text_path: str,
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read Textract temp files: {str(e)}")
 
-    prompt = """
-    Analyze the images and extract all the text into well-formatted markdown.
-    
-    RULES:
-    1. Maintain all tables in proper markdown format.
-    2. Preserve any mathematical formulas using LaTeX notation (e.g., $...$ or $$...$$).
-    3. Keep the document structure and hierarchy (headings, paragraphs, lists).
-    4. Format measurements, units, and technical specifications correctly.
-    5. Include relevant headers and sections.
-    6. Preserve numerical data and calculations accurately.
-    7. Format lists (bulleted and numbered) properly.
-    8. Output ONLY the markdown content, without any introductory text or code fences like ```markdown.
-    
-    You are provided with raw text and table data extracted by AWS Textract as context. 
-    This OCR data might contain errors, so use it as a guide but prioritize your own analysis of the images for accuracy and formatting.
-    """
+    prompt = read_prompt_file('markdown-generation.md')
 
     content_parts = [
         prompt,
@@ -88,55 +82,8 @@ def generate_excel_mapping_from_markdown(gemini_model, template_markdown: str, s
     Uses Gemini to analyze template and scan markdown, returning a Python dictionary 
     mapping cell IDs to values for filling the Excel template.
     """
-    prompt = f"""
-    You are an expert in data mapping for Microsoft Excel. Your goal is to analyze an Excel template definition and OCR extracted data to generate a mapping of cell locations to values.
-
-    You will receive two inputs:
-    1. Excel Template Definition: The markdown content of the excel file that you should write to. Use this to understand the template structure and identify target cell locations.
-    2. OCR Extracted Data: The data in markdown that you should write to the excel. Only write data that is not yet in the excel template.
-
-    IMPORTANT RULES:
-    1. Keep track of merged cells. For example, if you see "A4: "JOB #:" (merged range: A4:E4)", write the corresponding value to F4 since A4:E4 is merged.
-    2. For checkbox sections like "[x] FINAL", write "x" to the cell on the left of "FINAL" instead of replacing "FINAL".
-    3. Do not write values to cells that contain formulas (indicated by "#DIV/0!" or similar).
-    4. Output a JSON object where:
-       - Keys are Excel cell IDs (e.g., "A1", "B2")
-       - Values are the corresponding data to insert
-    5. Only include mappings for data found in the OCR Extracted Data.
-    6. ONLY write the data that is not yet in the excel template, meaning the data that needs to be inserted.
-    7. Ensure values are appropriate types (strings, numbers, etc.).
-    8. Return ALL the data that needs to be inserted, don't skip any cells or end eearly 
-
-    Example of expected output format:
-    {{
-        "D4": "205274-101.01.01",
-        "D5": "Hilcorp Alaska",
-        "D6": "Chilo",
-        "D7": "04-23-25",
-        "BU6": "X",
-        "D20": 58.427, "H20": 58.430, "L20": 58.421, "P20": 58.429,
-        "T20": 58.440, "X20": 58.438, "AB20": 58.430, "AF20": 58.418,
-        "D21": 43.915, "H21": 43.895, "L21": 43.892, "P21": 43.927,
-        "T21": 43.910, "X21": 43.932, "AB21": 43.899, "AF21": 43.906,
-        "D22": 36.839, "H22": 36.805, "L22": 36.790, "P22": 36.810,
-        "T22": 36.815, "X22": 36.805, "AB22": 36.812, "AF22": 36.835,
-        "D23": 36.340, "H23": 36.280, "L23": 36.300, "P23": 36.300,
-        "T23": 36.320, "X23": 36.310, "AB23": 36.310, "AF23": 36.342,
-        "D24": 36.314, "H24": 36.272, "L24": 36.290, "P24": 36.273
-    }}
-
-    Excel Template Definition:
-    ------------------------
-    {template_markdown}
-    ------------------------
-
-    OCR Extracted Data:
-    --------------------------
-    {scan_markdown}
-    --------------------------
-
-    Return ONLY the JSON object, without any additional text or code fences.
-    """
+    prompt = read_prompt_file('excel-mapping.md')
+    prompt = f"{prompt}\n\nExcel Template Definition:\n------------------------\n{template_markdown}\n------------------------\n\nOCR Extracted Data:\n--------------------------\n{scan_markdown}\n--------------------------\n"
 
     print("--------------------------------")
     print(prompt)
@@ -144,7 +91,6 @@ def generate_excel_mapping_from_markdown(gemini_model, template_markdown: str, s
 
     try:
         response = gemini_model.generate_content(prompt)
-
         
         dict_string = response.text.strip()
 

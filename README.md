@@ -59,7 +59,6 @@ A Python toolchain for extracting, filling, and analyzing Excel files, with AI-p
 - `excel.py` – Fill Excel template
 - `gemini.py` – AI analysis
 - `fastapi-app.py` – FastAPI app for Excel filling
-- `prompt/gemini.md` – Gemini prompt
 
 ---
 
