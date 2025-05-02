@@ -1,6 +1,24 @@
 import openpyxl
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
+
+def fill_excel_template(excel_template_file, output_file, data_to_insert):
+    try:
+        wb = load_workbook(filename=excel_template_file)
+        ws = wb["Sheet1"]
+        for cell_id, value in data_to_insert.items():
+            ws[cell_id] = value
+        wb.save(output_file)
+        return True, None
+    except FileNotFoundError:
+        return False, "Template file not found."
+    except InvalidFileException:
+        return False, "Invalid Excel file."
+    except KeyError:
+        return False, "Sheet1 not found in the workbook."
+    except Exception as e:
+        return False, str(e)
+
 data_to_insert = {
     "F4": "205274-101.01.01",
     "F5": "Hilcorp Alaska",
@@ -125,17 +143,9 @@ data_to_insert = {
 }
 excel_template_file = "input/IGEG1688I.xlsx"
 output_file = "IGEG1688I_filled.xlsx"
-try:
-    wb = load_workbook(filename=excel_template_file)
-    ws = wb["Sheet1"]
-    for cell_id, value in data_to_insert.items():
-        ws[cell_id] = value
-    wb.save(output_file)
-except FileNotFoundError:
-    pass
-except InvalidFileException:
-    pass
-except KeyError:
-    pass
-except Exception as e:
-    pass
+
+result, error = fill_excel_template(excel_template_file, output_file, data_to_insert)
+if result:
+    print("Excel template filled successfully.")
+else:
+    print(f"Failed to fill Excel template. Error: {error}")
