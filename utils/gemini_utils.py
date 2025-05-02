@@ -85,10 +85,6 @@ def generate_excel_mapping_from_markdown(gemini_model, template_markdown: str, s
     prompt = read_prompt_file('excel-mapping.md')
     prompt = f"{prompt}\n\nExcel Template Definition:\n------------------------\n{template_markdown}\n------------------------\n\nOCR Extracted Data:\n--------------------------\n{scan_markdown}\n--------------------------\n"
 
-    print("--------------------------------")
-    print(prompt)
-    print("--------------------------------")
-
     try:
         response = gemini_model.generate_content(prompt)
         
