@@ -1,11 +1,12 @@
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 import tempfile
 import shutil
 import os
 import json
-from excel import fill_excel_template
+from fill_excel import fill_excel_template
+from excel_to_markdown import convert_excel_to_markdown
 
 app = FastAPI()
 
@@ -56,4 +57,33 @@ def fill_excel(
     # Return the filled Excel file
     response = FileResponse(output_path, filename="filled_template.xlsx", media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     background_tasks.add_task(cleanup, template_path, output_path)
-    return response 
+    return response
+
+@app.post("/excel-to-markdown/")
+async def excel_to_markdown(
+    background_tasks: BackgroundTasks,
+    excel_file: UploadFile = File(...)
+):
+    # Save the uploaded Excel file to a temp file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_file:
+        shutil.copyfileobj(excel_file.file, tmp_file)
+        excel_path = tmp_file.name
+
+    try:
+        # Process the Excel file to Markdown
+        success, result = convert_excel_to_markdown(excel_path)
+        if not success:
+            raise HTTPException(status_code=500, detail=result)
+        
+        # Clean up the temporary Excel file
+        background_tasks.add_task(cleanup, excel_path, None)
+        
+        # Return the markdown content directly as text
+        return PlainTextResponse(
+            content=result,
+            media_type="text/markdown"
+        )
+        
+    except Exception as e:
+        os.remove(excel_path)
+        raise HTTPException(status_code=500, detail=f"Failed to convert Excel to Markdown: {str(e)}") 
