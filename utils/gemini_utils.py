@@ -21,7 +21,7 @@ def get_gemini_client():
         # Configure the client
         genai.configure(api_key=GEMINI_API_KEY)
         # Initialize the generative model (adjust model name as needed)
-        model = genai.GenerativeModel('gemini-1.5-flash-latest') # Using flash as it's faster for this usually
+        model = genai.GenerativeModel("gemini-2.5-flash-preview-04-17")
         return model
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to initialize Gemini client: {str(e)}")
@@ -89,37 +89,70 @@ def generate_excel_mapping_from_markdown(gemini_model, template_markdown: str, s
     mapping cell IDs to values for filling the Excel template.
     """
     prompt = f"""
-    Analyze the Excel Template Markdown and the Scanned Document Markdown provided below.
-    Your task is to identify the data present in the Scanned Document Markdown that corresponds to the placeholders or structure defined in the Excel Template Markdown.
-    Generate ONLY a Python dictionary where:
-    - Keys are the target cell IDs (e.g., "A1", "B2") in the Excel template where data should be inserted.
-    - Values are the corresponding data extracted from the Scanned Document Markdown.
-    
-    IMPORTANT RULES:
-    1. Only include mappings for data found in the Scanned Document Markdown.
-    2. Ensure keys are valid Excel cell IDs (strings).
-    3. Ensure values are appropriate Python types (strings, numbers, etc.).
-    4. The output MUST be a single, valid Python dictionary literal. Do NOT include any other text, explanations, or code fences (```python ... ```).
-    5. Pay attention to merged cell information in the template markdown (e.g., `(merged range: A4:E4)`) to correctly identify the primary cell ID for a merged area (e.g., A4).
+    You are an expert in data mapping for Microsoft Excel. Your goal is to analyze an Excel template definition and OCR extracted data to generate a mapping of cell locations to values.
 
-    Excel Template Markdown:
+    You will receive two inputs:
+    1. Excel Template Definition: The markdown content of the excel file that you should write to. Use this to understand the template structure and identify target cell locations.
+    2. OCR Extracted Data: The data in markdown that you should write to the excel. Only write data that is not yet in the excel template.
+
+    IMPORTANT RULES:
+    1. Keep track of merged cells. For example, if you see "A4: "JOB #:" (merged range: A4:E4)", write the corresponding value to F4 since A4:E4 is merged.
+    2. For checkbox sections like "[x] FINAL", write "x" to the cell on the left of "FINAL" instead of replacing "FINAL".
+    3. Do not write values to cells that contain formulas (indicated by "#DIV/0!" or similar).
+    4. Output a JSON object where:
+       - Keys are Excel cell IDs (e.g., "A1", "B2")
+       - Values are the corresponding data to insert
+    5. Only include mappings for data found in the OCR Extracted Data.
+    6. ONLY write the data that is not yet in the excel template, meaning the data that needs to be inserted.
+    7. Ensure values are appropriate types (strings, numbers, etc.).
+    8. Return ALL the data that needs to be inserted, don't skip any cells or end eearly 
+
+    Example of expected output format:
+    {{
+        "D4": "205274-101.01.01",
+        "D5": "Hilcorp Alaska",
+        "D6": "Chilo",
+        "D7": "04-23-25",
+        "BU6": "X",
+        "D20": 58.427, "H20": 58.430, "L20": 58.421, "P20": 58.429,
+        "T20": 58.440, "X20": 58.438, "AB20": 58.430, "AF20": 58.418,
+        "D21": 43.915, "H21": 43.895, "L21": 43.892, "P21": 43.927,
+        "T21": 43.910, "X21": 43.932, "AB21": 43.899, "AF21": 43.906,
+        "D22": 36.839, "H22": 36.805, "L22": 36.790, "P22": 36.810,
+        "T22": 36.815, "X22": 36.805, "AB22": 36.812, "AF22": 36.835,
+        "D23": 36.340, "H23": 36.280, "L23": 36.300, "P23": 36.300,
+        "T23": 36.320, "X23": 36.310, "AB23": 36.310, "AF23": 36.342,
+        "D24": 36.314, "H24": 36.272, "L24": 36.290, "P24": 36.273
+    }}
+
+    Excel Template Definition:
     ------------------------
     {template_markdown}
     ------------------------
 
-    Scanned Document Markdown:
+    OCR Extracted Data:
     --------------------------
     {scan_markdown}
     --------------------------
 
-    Python Dictionary Output:
+    Return ONLY the JSON object, without any additional text or code fences.
     """
+
+    print("--------------------------------")
+    print(prompt)
+    print("--------------------------------")
 
     try:
         response = gemini_model.generate_content(prompt)
+
+        
         dict_string = response.text.strip()
-        # Clean potential python fences
-        dict_string = dict_string.removeprefix("```python").removesuffix("```").strip()
+
+        # Save dict_string to file for debugging/logging
+        with open("gemini_response.txt", "w") as f:
+            f.write(dict_string)
+        # Clean potential json fences
+        dict_string = dict_string.removeprefix("```json").removesuffix("```").strip()
         
         # Safely evaluate the string to a dictionary
         try:

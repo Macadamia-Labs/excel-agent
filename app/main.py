@@ -12,6 +12,7 @@ from app.fill_excel_with_scan import fill_excel_with_scan
 
 # Import utility functions
 from utils.file_utils import save_upload_file_tmp, cleanup_files
+from utils.gemini_utils import generate_excel_mapping_from_markdown, get_gemini_client
 
 
 # --- FastAPI App Setup ---
@@ -220,3 +221,69 @@ async def fill_excel_with_scan_route(
 @app.get("/", include_in_schema=False)
 async def root():
     return {"message": "Welcome to the Excel Agent API. See /docs for details."} 
+
+@app.post("/test-excel-scan-mapping/",
+          summary="Tests the mapping between Excel template and scanned PDF",
+          response_description="JSON object containing the mapping results")
+async def test_excel_scan_mapping_route(
+    background_tasks: BackgroundTasks,
+    excel_template: UploadFile = File(..., description="Excel template file (.xlsx)"),
+    pdf_file: UploadFile = File(..., description="Scanned document in PDF format containing data")
+):
+    """
+    Tests the mapping functionality between Excel template and scanned PDF.
+    Returns the mapping results without actually filling the Excel file.
+    """
+    request_id = uuid.uuid4()
+    print(f"[{request_id}] Received request for /test-excel-scan-mapping/")
+
+    excel_path = None
+    pdf_path = None
+    raw_text_path = None
+    table_path = None
+
+    try:
+        # Save uploaded files
+        print(f"[{request_id}] Saving uploaded Excel template: {excel_template.filename}")
+        excel_path = await save_upload_file_tmp(excel_template, suffix=".xlsx")
+        print(f"[{request_id}] Template saved to: {excel_path}")
+        
+        # Initialize Gemini client
+        print(f"[{request_id}] Initializing Google Gemini client...")
+        gemini_model = get_gemini_client()
+
+        # 1. Convert Excel template to Markdown
+        print(f"[{request_id}] Converting Excel template to Markdown: {excel_path}")
+        success, template_markdown = convert_excel_to_markdown(excel_path)
+        if not success:
+            raise HTTPException(status_code=500, detail=f"Failed to convert Excel template to markdown: {template_markdown}")
+        print(f"[{request_id}] Excel template converted to Markdown successfully.")
+
+        # 2. Process PDF scan to Markdown
+        print(f"[{request_id}] Converting scan to Markdown...")
+        scan_markdown, pdf_path, raw_text_path, table_path = await convert_scan_to_markdown(request_id, pdf_file)
+        print(f"[{request_id}] Scan converted to Markdown successfully.")
+
+        # 3. Generate data mapping using Gemini
+        print(f"[{request_id}] Starting Gemini mapping between template Markdown and scan Markdown...")
+        data_to_insert = generate_excel_mapping_from_markdown(gemini_model, template_markdown, scan_markdown)
+        print(f"[{request_id}] Gemini mapping complete. Generated {len(data_to_insert)} mappings.")
+
+        # Schedule cleanup of temporary files
+        print(f"[{request_id}] Scheduling cleanup for: {excel_path}, {pdf_path}, {raw_text_path}, {table_path}")
+        background_tasks.add_task(cleanup_files, excel_path, pdf_path, raw_text_path, table_path)
+
+        # Return the mapping results
+        return {
+            "mapping_results": data_to_insert,
+            "template_markdown": template_markdown,
+            "scan_markdown": scan_markdown
+        }
+
+    except HTTPException as http_exc:
+        cleanup_files(excel_path, pdf_path, raw_text_path, table_path)
+        raise http_exc
+    except Exception as e:
+        print(f"[{request_id}] An unexpected server error occurred: {str(e)}")
+        cleanup_files(excel_path, pdf_path, raw_text_path, table_path)
+        raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}") 

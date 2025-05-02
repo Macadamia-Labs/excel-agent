@@ -1,8 +1,9 @@
-from utils.aws_utils import extract_text_and_tables, get_textract_client
+from utils.aws_utils import get_textract_client
 from utils.file_utils import save_upload_file_tmp
-from utils.gemini_utils import generate_markdown_from_scan, get_gemini_client, generate_excel_mapping_from_markdown
+from utils.gemini_utils import get_gemini_client, generate_excel_mapping_from_markdown
 from app.excel_to_markdown import convert_excel_to_markdown
 from app.fill_excel_with_json import fill_excel_template
+from app.scan_to_markdown import convert_scan_to_markdown
 
 
 async def fill_excel_with_scan(request_id, excel_template, pdf_file):
@@ -28,13 +29,9 @@ async def fill_excel_with_scan(request_id, excel_template, pdf_file):
         print(f"[{request_id}] Saving uploaded Excel template: {excel_template.filename}")
         excel_path = await save_upload_file_tmp(excel_template, suffix=".xlsx")
         print(f"[{request_id}] Template saved to: {excel_path}")
-        print(f"[{request_id}] Saving uploaded PDF: {pdf_file.filename}")
-        pdf_path = await save_upload_file_tmp(pdf_file, suffix=".pdf")
-        print(f"[{request_id}] PDF saved to: {pdf_path}")
         
-        # Initialize clients
-        print(f"[{request_id}] Initializing AWS Textract and Google Gemini clients...")
-        textract_client = get_textract_client()
+        # Initialize Gemini client
+        print(f"[{request_id}] Initializing Google Gemini client...")
         gemini_model = get_gemini_client()
 
         # 1. Convert Excel template to Markdown
@@ -44,17 +41,15 @@ async def fill_excel_with_scan(request_id, excel_template, pdf_file):
             raise Exception(f"Failed to convert Excel template to markdown: {template_markdown}")
         print(f"[{request_id}] Excel template converted to Markdown successfully.")
 
-        # 2. Process PDF scan to Markdown
-        print(f"[{request_id}] Starting Textract processing for PDF: {pdf_path}")
-        raw_text_path, table_path = extract_text_and_tables(textract_client, pdf_path)
-        print(f"[{request_id}] Textract processing complete. Raw text: {raw_text_path}, Tables: {table_path}")
-        print(f"[{request_id}] Starting Gemini enhancement for scan...")
-        scan_markdown = generate_markdown_from_scan(gemini_model, pdf_path, raw_text_path, table_path)
-        print(f"[{request_id}] Scan enhanced to Markdown successfully.")
+        # 2. Process PDF scan to Markdown using scan_to_markdown
+        print(f"[{request_id}] Converting scan to Markdown...")
+        scan_markdown, pdf_path, raw_text_path, table_path = await convert_scan_to_markdown(request_id, pdf_file)
+        print(f"[{request_id}] Scan converted to Markdown successfully.")
 
         # 3. Generate data mapping using Gemini
         print(f"[{request_id}] Starting Gemini mapping between template Markdown and scan Markdown...")
         data_to_insert = generate_excel_mapping_from_markdown(gemini_model, template_markdown, scan_markdown)
+        print(data_to_insert)
         print(f"[{request_id}] Gemini mapping complete. Generated {len(data_to_insert)} mappings.")
         
         # 4. Fill the Excel template
