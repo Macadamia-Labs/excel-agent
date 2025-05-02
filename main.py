@@ -41,4 +41,4 @@ def excel_to_markdown(filename):
         f.write('\n'.join(markdown_output))
 
 if __name__ == "__main__":
-    excel_to_markdown("IGEG1688I.xlsx")
+    excel_to_markdown("IGEG1688I-final.xlsx")
