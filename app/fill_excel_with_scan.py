@@ -49,7 +49,6 @@ async def fill_excel_with_scan(request_id, excel_template, document):
         # 3. Generate data mapping using Gemini
         print(f"[{request_id}] Starting Gemini mapping between template Markdown and scan Markdown...")
         data_to_insert = generate_excel_mapping_from_markdown(gemini_model, template_markdown, scan_markdown)
-        print(data_to_insert)
         print(f"[{request_id}] Gemini mapping complete. Generated {len(data_to_insert)} mappings.")
         
         # 4. Fill the Excel template
