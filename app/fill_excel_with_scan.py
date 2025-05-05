@@ -146,19 +146,18 @@ async def fill_excel_with_scan(
         # --- 3. Get Gemini Mapping --- 
         print(f"[{request_id}] Generating data mapping using Gemini...")
         gemini_client = get_gemini_client()
-        mapping_json_str = await generate_excel_mapping_from_markdown(
+        mapping_json_str = generate_excel_mapping_from_markdown(
             gemini_client,
             excel_markdown, 
             scan_markdown
         )
         
-        try:
-            data_to_insert = json.loads(mapping_json_str)
-            if not isinstance(data_to_insert, dict):
-                 raise ValueError("Gemini did not return a valid JSON object for mapping")
-        except (json.JSONDecodeError, ValueError) as e:
-            print(f"[{request_id}] Error: Invalid JSON mapping from Gemini: {mapping_json_str}")
-            raise RuntimeError(f"Failed to parse mapping from AI: {e}")
+        # The function already returns a dictionary, no need for json.loads
+        data_to_insert = mapping_json_str # Rename variable for clarity
+        if not isinstance(data_to_insert, dict):
+            # This check might still be useful if the previous function fails silently
+             raise RuntimeError("Mapping function did not return a valid dictionary object")
+
         print(f"[{request_id}] Data mapping generated successfully.")
 
         # --- 4. Fill Excel Template --- 
