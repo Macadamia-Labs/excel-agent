@@ -1,67 +1,178 @@
-from utils.aws_utils import get_textract_client
-from utils.file_utils import save_upload_file_tmp
-from utils.gemini_utils import get_gemini_client, generate_excel_mapping_from_markdown
+import uuid
+import os
+import json
+from typing import Tuple, List
+from fastapi import UploadFile, HTTPException # Removed BackgroundTasks, no longer needed here
+
+# Import core logic functions
 from app.excel_to_markdown import convert_excel_to_markdown
-from app.fill_excel_with_json import fill_excel_template
 from app.scan_to_markdown import convert_scan_to_markdown
+from app.fill_excel_with_json import fill_excel_template
 
+# Import utility functions
+from utils.gemini_utils import generate_excel_mapping_from_markdown, get_gemini_client
+from utils.file_utils import save_upload_file_tmp, cleanup_files # Added cleanup_files
 
-async def fill_excel_with_scan(request_id, excel_template, document):
+async def fill_excel_with_scan(
+    request_id: uuid.UUID,
+    excel_template_path: str, # Changed from UploadFile
+    document_path: str, # Changed from UploadFile
+    document_filename: str # Added to get original filename for output
+) -> Tuple[str, List[str]]: # Return output_path and list of files_to_cleanup
     """
-    Core logic for filling an Excel template with data from a scanned document.
-    
-    Args:
-        request_id: Unique identifier for the request
-        excel_template: UploadFile containing the Excel template
-        document: UploadFile containing the scanned document (PDF or image)
-        
-    Returns:
-        tuple: (output_path, excel_path, doc_path, raw_text_path, table_path)
+    Core logic to fill an Excel template using data extracted from a scanned document.
+    Accepts file paths instead of UploadFile objects.
+    Returns the path to the filled Excel file and a list of temporary files created.
     """
-    excel_path = None
-    doc_path = None
+    files_to_cleanup = []
+    output_path = None
+    excel_markdown = None
+    scan_markdown = None
+    doc_path = document_path # Use passed path
+    excel_path = excel_template_path # Use passed path
+    raw_text_path = None # Initialize
+    table_path = None # Initialize
+
+    try:
+        # --- 1. Convert Excel Template to Markdown --- Needs excel_path
+        print(f"[{request_id}] Converting Excel template to Markdown: {excel_path}")
+        success, excel_markdown_or_error = convert_excel_to_markdown(excel_path)
+        if not success:
+            raise HTTPException(status_code=500, detail=f"Failed to convert Excel template: {excel_markdown_or_error}")
+        excel_markdown = excel_markdown_or_error
+        print(f"[{request_id}] Excel template converted to Markdown successfully.")
+
+        # --- 2. Convert Scan to Markdown --- Needs doc_path
+        # Note: convert_scan_to_markdown now needs modification to accept a path 
+        # OR we handle the saving/cleanup of the scan doc *before* calling this.
+        # Let's assume convert_scan_to_markdown still handles saving its *own* temp files internally
+        # and returns the paths for cleanup.
+        # We will need to refactor convert_scan_to_markdown separately if it expects UploadFile.
+        # *** FOR NOW: Assuming convert_scan_to_markdown accepts a path ***
+        # If convert_scan_to_markdown does its own saving from UploadFile, we need to adjust the main.py call flow.
+        # Let's adjust the plan: main.py saves the doc, passes the path here.
+        # This function will NOT call convert_scan_to_markdown directly.
+        # Instead, main.py will call it and pass the scan_markdown and the relevant paths.
+
+        # REVISED PLAN: This function will receive markdown strings, not paths to convert.
+        # This simplifies dependencies and focuses this function on mapping + filling.
+
+    except Exception as e:
+        print(f"[{request_id}] Error during initial conversion steps: {str(e)}")
+        # Cleanup any files created *so far* if an error occurs early
+        cleanup_files(*files_to_cleanup)
+        raise # Re-raise the exception to be caught by the main route handler
+
+# Let's simplify the refactor first. keep the conversions here for now.
+# Assume convert_scan_to_markdown is updated to accept a path.
+
+async def fill_excel_with_scan(
+    request_id: uuid.UUID,
+    excel_template_path: str, 
+    document_path: str,
+    document_original_filename: str, # For scan_to_markdown
+    excel_original_filename: str # For naming output
+) -> Tuple[str, str, str, str, str]: # output_path, excel_path, doc_path, raw_text_path, table_path
+    """
+    Core logic: Converts both files, gets mapping, fills template.
+    Accepts file paths.
+    Returns paths to all temporary files created including the final output.
+    """
+    excel_path = excel_template_path
+    doc_path = document_path
     raw_text_path = None
     table_path = None
     output_path = None
 
     try:
-        # Save uploaded files
-        print(f"[{request_id}] Saving uploaded Excel template: {excel_template.filename}")
-        excel_path = await save_upload_file_tmp(excel_template, suffix=".xlsx")
-        print(f"[{request_id}] Template saved to: {excel_path}")
-        
-        # Initialize Gemini client
-        print(f"[{request_id}] Initializing Google Gemini client...")
-        gemini_model = get_gemini_client()
-
-        # 1. Convert Excel template to Markdown
+        # --- 1. Convert Excel Template to Markdown --- 
         print(f"[{request_id}] Converting Excel template to Markdown: {excel_path}")
-        success, template_markdown = convert_excel_to_markdown(excel_path)
+        success, excel_markdown_or_error = convert_excel_to_markdown(excel_path)
         if not success:
-            raise Exception(f"Failed to convert Excel template to markdown: {template_markdown}")
+            raise RuntimeError(f"Failed to convert Excel template: {excel_markdown_or_error}")
+        excel_markdown = excel_markdown_or_error
         print(f"[{request_id}] Excel template converted to Markdown successfully.")
 
-        # 2. Process scanned document to Markdown using scan_to_markdown
-        print(f"[{request_id}] Converting scan to Markdown...")
-        scan_markdown, doc_path, raw_text_path, table_path = await convert_scan_to_markdown(request_id, document)
-        print(f"[{request_id}] Scan converted to Markdown successfully.")
+        # --- 2. Convert Scan to Markdown --- 
+        # This function needs the UploadFile object based on its current signature.
+        # Let's revert the plan slightly: We'll pass the UploadFile object for the document
+        # but the path for the already processed Excel template.
 
-        # 3. Generate data mapping using Gemini
-        print(f"[{request_id}] Starting Gemini mapping between template Markdown and scan Markdown...")
-        data_to_insert = generate_excel_mapping_from_markdown(gemini_model, template_markdown, scan_markdown)
-        print(f"[{request_id}] Gemini mapping complete. Generated {len(data_to_insert)} mappings.")
+    except Exception as e:
+        # This function won't handle cleanup directly, main.py will
+        print(f"[{request_id}] Error during fill_excel_with_scan pre-processing: {str(e)}")
+        raise
+
+# --- Let's stick to the original plan but adjust `convert_scan_to_markdown` --- 
+# Assumption: `convert_scan_to_markdown` is refactored to accept a path.
+# If not, this edit will fail.
+
+async def fill_excel_with_scan(
+    request_id: uuid.UUID,
+    excel_template_path: str, # Path to the .xlsx template
+    document_path: str, # Path to the saved PDF/image
+    document_original_filename: str, # Needed if scan_to_markdown uses it
+    excel_original_filename: str # For naming output
+) -> Tuple[str, str, str, str, str]: # output_path, excel_path, doc_path, raw_text_path, table_path
+    """
+    Core logic: Converts both files (from paths), gets mapping, fills template.
+    Returns paths to all temporary files created including the final output.
+    """
+    excel_path = excel_template_path
+    doc_path = document_path
+    raw_text_path = None
+    table_path = None
+    output_path = None
+
+    try:
+        # --- 1. Convert Excel Template to Markdown --- 
+        print(f"[{request_id}] Converting Excel template to Markdown: {excel_path}")
+        success, excel_markdown_or_error = convert_excel_to_markdown(excel_path)
+        if not success:
+            raise RuntimeError(f"Failed to convert Excel template: {excel_markdown_or_error}")
+        excel_markdown = excel_markdown_or_error
+        print(f"[{request_id}] Excel template converted to Markdown successfully.")
+
+        # --- 2. Convert Scan to Markdown --- 
+        # Requires `convert_scan_to_markdown` to accept a file path instead of UploadFile
+        # We will *assume* this change is made separately or this part will fail.
+        print(f"[{request_id}] Converting Scan document to Markdown: {doc_path}")
+        # Mock UploadFile object if necessary, or ideally refactor convert_scan_to_markdown
+        # Let's assume refactoring of convert_scan_to_markdown to take path and original filename
+        scan_markdown, _, raw_text_path, table_path = await convert_scan_to_markdown(request_id, doc_path, document_original_filename)
+        # We get back paths to temp files created by convert_scan_to_markdown
+        print(f"[{request_id}] Scan document converted to Markdown successfully.")
+
+        # --- 3. Get Gemini Mapping --- 
+        print(f"[{request_id}] Generating data mapping using Gemini...")
+        gemini_client = get_gemini_client()
+        mapping_json_str = await generate_excel_mapping_from_markdown(
+            gemini_client,
+            excel_markdown, 
+            scan_markdown
+        )
         
-        # 4. Fill the Excel template
-        print(f"[{request_id}] Calling fill_excel_template...")
+        try:
+            data_to_insert = json.loads(mapping_json_str)
+            if not isinstance(data_to_insert, dict):
+                 raise ValueError("Gemini did not return a valid JSON object for mapping")
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"[{request_id}] Error: Invalid JSON mapping from Gemini: {mapping_json_str}")
+            raise RuntimeError(f"Failed to parse mapping from AI: {e}")
+        print(f"[{request_id}] Data mapping generated successfully.")
+
+        # --- 4. Fill Excel Template --- 
         output_path = excel_path.replace(".xlsx", "_filled.xlsx")
+        print(f"[{request_id}] Filling Excel template: {excel_path} -> {output_path}")
         success, error = fill_excel_template(excel_path, output_path, data_to_insert)
         if not success:
-            raise Exception(f"Failed to fill Excel template after mapping: {error}")
+            raise RuntimeError(f"Failed to fill Excel template: {error}")
+        print(f"[{request_id}] Excel template filled successfully: {output_path}")
 
+        # Return all relevant paths for cleanup by the caller (main.py)
         return output_path, excel_path, doc_path, raw_text_path, table_path
 
     except Exception as e:
-        # Clean up any files that were created before the error
-        from utils.file_utils import cleanup_files
-        cleanup_files(excel_path, doc_path, raw_text_path, table_path, output_path)
-        raise e 
+        print(f"[{request_id}] Error during fill_excel_with_scan processing: {str(e)}")
+        # Let main.py handle cleanup based on which paths are not None
+        raise # Re-raise exception for main.py to catch 

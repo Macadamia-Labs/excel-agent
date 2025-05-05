@@ -1,12 +1,17 @@
 fastapi
-uvicorn
+uvicorn[standard]
 openpyxl
 python-dotenv
-google-generativeai 
+# Gemini
+google-generativeai
+# AWS
 boto3
+# Excel
+pyexcel
+pyexcel-xls
+pyexcel-xlsx
 python-multipart
 Pillow
 pdf2image
 starlette
 pydantic
-braintrust
