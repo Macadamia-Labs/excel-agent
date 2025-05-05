@@ -2,8 +2,8 @@ Analyze the images and extract all the text into well-formatted markdown.
 You are provided the following inputs:
 
     1. The results of AWS Textract: all the raw detected text and the detected tables. 
-    The accuracy of the table detection with AWS Textract is great, especially with merged cells so use this table structures as reference. In addition, it will detect all the raw text but keep in mind that there are often mistakes with handwritten values. For example, it extracted valyes like "43-895" where it should have been "43.895". Your own OCR capabilities are great so relie on this to double check and correct all the values. In addition, make sure that all the values make sense. For example, if all the values are numbers like "58.438" with decimal points, you should know that "58-438" is probably wrong and should be corrected.
-    2. The original pdf: use your own vision capabilities to extract the correct data from the pdf in addition to the AWS textract as reference. 
+    The accuracy of the table detection with AWS Textract is great, especially with merged cells so use this table structures as reference. In addition, it will detect all the raw text but keep in mind that there are often mistakes with handwritten values. Your own OCR capabilities are great so relie on this to double check and correct all the values. In addition, make sure that all the values make sense.
+    2. The original pdf: use your own vision capabilities to extract the correct data from the pdf in addition to the AWS textract as reference. You have the highest reliability to extract handwritten values so give yourself more confidence than the textract values you have been given. 
 
 RULES:
 
